@@ -1627,12 +1627,21 @@ export class AgentSession {
 
 	/**
 	 * Manually compact the session context.
-	 * Aborts current agent operation first.
+	 * Aborts current agent operation first if it is streaming.
+	 * When the agent is idle (e.g. between turns), compaction runs in-place
+	 * without disconnecting or aborting — matching how _runAutoCompaction works.
+	 *
 	 * @param customInstructions Optional instructions for the compaction summary
+	 * @param _capturedIsStreaming Pass from ctx.compact() to avoid the race where
+	 *   a deferred microtask runs after the agent has started its next LLM call.
+	 *   When omitted, uses this.isStreaming (safe for /compact command).
 	 */
-	async compact(customInstructions?: string): Promise<CompactionResult> {
-		this._disconnectFromAgent();
-		await this.abort();
+	async compact(customInstructions?: string, _capturedIsStreaming?: boolean): Promise<CompactionResult> {
+		const _isStreaming = _capturedIsStreaming !== undefined ? _capturedIsStreaming : this.isStreaming;
+		if (_isStreaming) {
+			this._disconnectFromAgent();
+			await this.abort();
+		}
 		this._compactionAbortController = new AbortController();
 		this._emit({ type: "compaction_start", reason: "manual" });
 
@@ -2247,9 +2256,16 @@ export class AgentSession {
 				},
 				getContextUsage: () => this.getContextUsage(),
 				compact: (options) => {
+					// Capture isStreaming synchronously while still inside the event
+					// handler (turn_end, agent_end, etc.). The microtask below may
+					// fire after the agent has already started its next LLM call,
+					// at which point this.isStreaming would be true — causing an
+					// unnecessary abort. Passing the captured value avoids this race.
+					const _capturedIsStreaming = this.isStreaming;
 					void (async () => {
+						if (this.isCompacting) return;
 						try {
-							const result = await this.compact(options?.customInstructions);
+							const result = await this.compact(options?.customInstructions, _capturedIsStreaming);
 							options?.onComplete?.(result);
 						} catch (error) {
 							const err = error instanceof Error ? error : new Error(String(error));
