@@ -88,6 +88,7 @@ export interface Settings {
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
+	hideQueuePanel?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
@@ -827,6 +828,16 @@ export class SettingsManager {
 
 	getWebSocketConnectTimeoutMs(): number | undefined {
 		return parseTimeoutSetting(this.settings.websocketConnectTimeoutMs, "websocketConnectTimeoutMs");
+	}
+
+	getHideQueuePanel(): boolean {
+		return this.settings.hideQueuePanel ?? true;
+	}
+
+	setHideQueuePanel(hide: boolean): void {
+		this.globalSettings.hideQueuePanel = hide;
+		this.markModified("hideQueuePanel");
+		this.save();
 	}
 
 	getHideThinkingBlock(): boolean {
